@@ -1,6 +1,99 @@
-# Conv2md - Document to Markdown Converter
+# Conv2MD
 
-A powerful and robust Bash script for converting Word documents, PowerPoint presentations, and PDF files to Markdown format.
+A powerful document conversion utility that transforms Word, PowerPoint, and PDF documents into Markdown format.
+
+## Features
+
+- Convert multiple document types to Markdown:
+  - Word documents (.doc, .docx)
+  - PowerPoint presentations (.ppt, .pptx)
+  - PDF documents (.pdf)
+- Batch processing with parallel execution for improved performance
+- Checkpoint system to resume interrupted conversions
+- Intelligent handling of PDF conversions with OCR capabilities
+- Preserves document structure and images
+- Comprehensive logging system
+
+## Requirements
+
+- Bash 5.2.37 or higher
+- SQLite (optional, but recommended for improved checkpoint performance)
+- MarkItDown (primary conversion tool)
+- marker_single (for PDF OCR processing)
+- pandoc (for Word document conversion)
+- GNU Parallel (optional, for improved PDF processing)
+
+## Installation
+
+1. Clone this repository or download the source code:
+   ```bash
+   git clone https://github.com/malibrated/conv2md.git
+   ```
+
+2. Make the main script executable:
+   ```bash
+   chmod +x conv2md.sh
+   ```
+
+3. Ensure dependencies are installed:
+   ```bash
+   # Install Homebrew if not already installed
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   
+   # Install required dependencies
+   brew install bash sqlite pandoc parallel
+   
+   # Install MarkItDown
+   pip install 'markitdown[all]~=0.1.0a1'
+   
+   # Install marker for PDF OCR
+   # Follow instructions at https://github.com/VikParuchuri/marker
+   ```
+
+## Usage
+
+```bash
+./conv2md.sh -i <input_dir> -o <output_dir> [options]
+```
+
+### Options
+
+- `-i, --input <dir>`: Input directory containing documents to convert
+- `-o, --output <dir>`: Output directory for converted Markdown files
+- `-w, --workers <num>`: Maximum number of parallel workers (default: auto-detected)
+- `-m, --memory-limit <mb>`: Memory limit per process in MB (default: 4096)
+- `--force`: Force conversion of already converted files
+- `--resume`: Resume from checkpoint (skip already converted files)
+- `--skip-word`: Skip Word document conversion
+- `--skip-powerpoint`: Skip PowerPoint document conversion
+- `--skip-pdf`: Skip PDF document conversion
+- `-d, --debug`: Enable debug logging
+
+### Examples
+
+```bash
+# Basic conversion
+./conv2md.sh -i ~/Documents/MyDocs -o ~/Documents/MyDocs_markdown
+
+# Skip PDF conversion
+./conv2md.sh -i ~/Documents/MyDocs -o ~/Documents/MyDocs_markdown --skip-pdf
+
+# Limit workers and memory
+./conv2md.sh -i ~/Documents/MyDocs -o ~/Documents/MyDocs_markdown -w 2 -m 2048
+
+# Resume an interrupted conversion
+./conv2md.sh -i ~/Documents/MyDocs -o ~/Documents/MyDocs_markdown --resume
+```
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [MarkItDown](https://github.com/microsoft/markitdown) for document conversion
+- [marker](https://github.com/VikParuchuri/marker) for PDF OCR processing
+- [pandoc](https://pandoc.org/) for document format conversion
 
 ## Features
 
