@@ -463,4 +463,4 @@ If you encounter issues not covered in this documentation:
 
 1. Check the log files for detailed error messages
 2. Enable debug mode (`-d`) to get more information
-3. Report issues with detailed information about your system and the specific error 
+3. Report issues with detailed information about your system and the specific error
