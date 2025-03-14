@@ -193,7 +193,6 @@ check_dependencies() {
   if ! command -v sqlite3 &>/dev/null; then
     log_warning "sqlite3 command not found. Will use text-based checkpoint file instead."
     log_warning "For improved performance with large checkpoints, install SQLite: brew install sqlite"
-    log_warning "SQLite is strongly recommended for processing large batches of files efficiently."
   else
     log_debug "Found sqlite3 in PATH: $(which sqlite3)"
   fi

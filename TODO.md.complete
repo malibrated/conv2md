@@ -1,0 +1,453 @@
+# Conv2md Implementation TODO List
+
+This document outlines the issues identified in the conv2md script implementation compared to the documented features in README.md. Each item is prioritized and includes specific action items.
+
+## Implementation Notes
+
+- Each issue should be addressed in a separate commit for better tracking
+- Tests should be added or updated for each fixed feature
+- Documentation should be updated in parallel with code changes
+- Cross-platform compatibility should be considered for all changes
+- Run ShellCheck on all modified files before committing changes (located in /opt/homebrew/bin/shellcheck)
+
+## Additional Issues: Code Redundancy and Efficiency Improvements
+
+The following issues have been identified during a recent code review. Addressing these issues may improve maintainability, efficiency, and correctness of the codebase:
+
+### 2. Duplicate or Similar Code for Semaphore/Parallel Management
+- **Status**: ✅ COMPLETED
+- **Issue**: The semaphore and parallel processing logic in conv2md.sh is duplicated across functions (e.g., process_files and process_file_type). Consider refactoring this logic into a shared helper function to reduce redundancy and simplify maintenance.
+- **Files modified**:
+  - `lib/utils.sh` (added new utility functions)
+  - `conv2md.sh` (refactored process_files and process_file_type)
+  - `lib/converters.sh` (refactored process_pdfs_with_optimizations)
+- **Action Items Completed**:
+  - ✅ Added `process_files_in_parallel` utility function to centralize parallel processing logic
+  - ✅ Added `process_batches_in_parallel` utility function for batch processing
+  - ✅ Refactored `process_files` to use the new utility function
+  - ✅ Refactored `process_file_type` to use the new utility function
+  - ✅ Refactored `process_pdfs_with_optimizations` to separate batch creation from parallel processing
+  - ✅ Improved error handling and logging in all parallel processing functions
+  - ✅ Ensured proper cleanup of semaphore files and directories
+- **Implementation Pattern Used**:
+```bash
+# Use the centralized parallel processing function
+process_files_in_parallel "$file_list" "$job_type" "$max_workers" "$semaphore_dir" "process_function_name"
+```
+
+### 3. Potential Orphaned or Unreferenced Functions
+- **Status**: ✅ COMPLETED
+- **Issue**: There are calls to functions such as process_pdf_directory whose definition is unclear, and some functions in progress.sh might be obsolete due to the simplified progress logging implementation.
+- **Files modified**:
+  - `lib/converters.sh` (removed orphaned process_pdf_directory function)
+  - `lib/progress.sh` (removed dummy functions)
+- **Action Items Completed**:
+  - ✅ Removed the orphaned `process_pdf_directory` function from converters.sh
+  - ✅ Removed dummy functions from progress.sh: `setup_progress_pipe`, `close_progress_pipe`, `start_zombie_cleaner`, `stop_zombie_cleaner`
+  - ✅ Verified that these functions were not being called anywhere in the codebase
+  - ✅ Ensured that the removal of these functions doesn't break any functionality
+- **Implementation Note**: The `process_pdf_directory` function was replaced by the more efficient `process_pdfs_with_optimizations` function, and the progress display functions were simplified to use basic logging instead.
+
+### 4. Overlap in Utility Functions between file_ops.sh and utils.sh
+- **Status**: ✅ COMPLETED
+- **Issue**: Both file_ops.sh and utils.sh contain overlapping functionality (e.g., platform detection, file size checking, and path manipulation).
+- **Files modified**:
+  - `lib/file_ops.sh` (removed redundant functions and updated to use platform helpers)
+  - `lib/logging.sh` (removed redundant file size function)
+  - `lib/progress.sh` (removed redundant format_size function)
+- **Action Items Completed**:
+  - ✅ Removed redundant `get_file_size_bytes()` function from file_ops.sh
+  - ✅ Removed redundant `get_file_size()` function from logging.sh
+  - ✅ Removed redundant `format_size()` function from progress.sh
+  - ✅ Added clear comments directing to use the centralized functions in utils.sh
+  - ✅ Consolidated process management functions in file_ops.sh (merged `cleanup_child_processes()` into `cleanup_resources()`)
+  - ✅ Updated code throughout the codebase to use the standardized functions
+  - ✅ Fixed ShellCheck warnings in the modified files
+  - ✅ Added proper ShellCheck directives for variables defined in the main script
+- **Implementation Pattern Used**:
+```bash
+# Platform detection helper functions
+# These functions help avoid repeating platform detection logic throughout the codebase
+
+# Check if running on macOS
+is_macos() {
+  [[ "$(uname)" == "Darwin" ]]
+}
+
+# Check if running on Linux
+is_linux() {
+  [[ "$(uname)" == "Linux" ]]
+}
+
+# Function to get file size in bytes with fallback mechanisms
+get_file_size_bytes() {
+  local file="$1"
+  local size=0
+  
+  if [[ ! -f "$file" ]]; then
+    echo "0"
+    return
+  fi
+  
+  if is_macos; then
+    # macOS
+    size=$(stat -f%z "$file" 2>/dev/null)
+  elif is_linux; then
+    # Linux
+    size=$(stat -c%s "$file" 2>/dev/null)
+  else
+    # Fallback using wc -c
+    size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+  fi
+  
+  echo "${size:-0}"
+}
+```
+
+### 5. Redundant Dependency Checks
+- **Status**: ✅ COMPLETED
+- **Issue**: Dependency checks for tools like MarkItDown and marker_single are performed in multiple locations (both in conv2md.sh and in the library scripts).
+- **Files modified**:
+  - `lib/converters.sh` (all conversion functions)
+  - `conv2md.sh` (dependency checks)
+- **Action Items Completed**:
+  - ✅ Consolidated MarkItDown dependency checks in the main script
+  - ✅ Updated the `_convert_with_markitdown` function to assume MarkItDown availability has already been checked
+  - ✅ Added more specific error messages if MarkItDown is not found during conversion
+  - ✅ Clearly documented MarkItDown as the primary conversion tool for most file types
+  - ✅ Added appropriate warnings and fallback mechanisms for when MarkItDown is not available
+- **Implementation Pattern Used**:
+```bash
+# Check for MarkItDown (primary conversion tool for most file types)
+if check_markitdown; then
+  log_info "MarkItDown found. Will use as primary conversion tool for most file types."
+else
+  log_warning "MarkItDown not found. This will significantly limit conversion capabilities."
+  log_warning "Please install MarkItDown using pip:"
+  log_warning "pip install 'markitdown[all]~=0.1.0a1'"
+  log_warning "For more information, visit: https://github.com/microsoft/markitdown"
+  
+  # Set appropriate flags based on MarkItDown availability
+  if [[ "$skip_powerpoint" != "true" ]]; then
+    log_warning "PowerPoint (.ppt, .pptx) conversion will be skipped without MarkItDown."
+    skip_powerpoint=true
+  fi
+```
+
+### 6. Efficiency and Cleanup in Parallel Processing
+- **Status**: ✅ COMPLETED
+- **Issue**: The custom wait loop using semaphore directories might be streamlined for better performance. Currently, it relies on loops with delays and manual cleanup of semaphore files.
+- **Files modified**:
+  - `lib/utils.sh` (added platform detection helpers and standardized file size functions)
+  - `lib/file_ops.sh` (added standardized path handling functions)
+  - `lib/converters.sh` (updated conversion functions to use standardized path handling)
+- **Action Items Completed**:
+  - ✅ Added platform detection helper functions (`is_macos()`, `is_linux()`) to utils.sh
+  - ✅ Standardized file size functions in utils.sh (`get_file_size_bytes()`, `bytes_to_kb()`, `bytes_to_mb()`, `bytes_to_gb()`, `format_file_size()`)
+  - ✅ Added standardized `get_relative_path()` function in file_ops.sh for calculating relative paths
+  - ✅ Updated `get_output_path()` function to use the standardized approach
+  - ✅ Created an improved `convert_file_improved()` function that uses standardized path handling
+  - ✅ Updated `convert_file()` to call the improved version for backward compatibility
+  - ✅ Updated `process_directory_recursive()` to use standardized path handling for subdirectories
+  - ✅ Added proper error handling and fallbacks for systems without realpath
+  - ✅ Ensured consistent directory structure preservation across all conversion functions
+  - ✅ Verified that the output directory can be specified with -o/--output
+  - ✅ Confirmed that the default output is `<input_dir>_markdown` as documented
+- **Implementation Pattern Used**:
+```bash
+# Standardized function for calculating relative paths
+get_relative_path() {
+  local file_path="$1"
+  local base_dir="$2"
+  
+  # Ensure paths are absolute
+  local abs_file_path
+  local abs_base_dir
+  
+  # Get absolute paths, handling errors gracefully
+  if command -v realpath &>/dev/null; then
+    # Use realpath if available (more reliable)
+    abs_file_path=$(realpath "$file_path" 2>/dev/null || echo "$file_path")
+    abs_base_dir=$(realpath "$base_dir" 2>/dev/null || echo "$base_dir")
+  else
+    # Fallback if realpath is not available
+    if [[ "$file_path" = /* ]]; then
+      abs_file_path="$file_path"
+    else
+      abs_file_path="$(cd "$(dirname "$file_path")" && pwd)/$(basename "$file_path")"
+    fi
+    
+    if [[ "$base_dir" = /* ]]; then
+      abs_base_dir="$base_dir"
+    else
+      abs_base_dir="$(cd "$base_dir" && pwd)"
+    fi
+  fi
+  
+  # Get the directory part of the file path
+  local file_dir
+  file_dir=$(dirname "$abs_file_path")
+  
+  # Remove base_dir prefix to get relative path
+  local rel_path
+  if [[ "$file_dir" == "$abs_base_dir"* ]]; then
+    # File is under the base directory
+    rel_path="${file_dir#$abs_base_dir}"
+    # Remove leading slash if present
+    rel_path="${rel_path#/}"
+  else
+    # File is not under base_dir, use just the filename
+    rel_path=""
+  fi
+  
+  echo "$rel_path"
+}
+```
+
+## Project Structure Reference
+
+- **Main script**: `conv2md.sh` - Entry point with command-line parsing and main workflow
+- **Library files**: Located in the `lib/` directory:
+  - `converters.sh` - Core conversion functions for different file types
+  - `file_ops.sh` - File operations and path handling
+  - `logging.sh` - Logging functions and log rotation
+  - `progress.sh` - Simplified progress logging
+  - `system.sh` - System monitoring and resource management
+  - `config.sh` - Configuration settings
+  - `utils.sh` - Utility functions
+
+## High Priority
+
+### 1. Bash Version Requirement Mismatch
+- **Status**: ✅ COMPLETED
+- **Issue**: The README specifies Bash 5.2.37 or higher, but the script uses `#!/opt/homebrew/bin/bash` without version checking.
+- **Files to modify**: 
+  - `conv2md.sh` (lines 1-20)
+- **Action Items**:
+  - ✅ Add Bash version checking at the beginning of the script
+  - ✅ Provide a clear error message if the Bash version is too old
+  - ✅ Update shebang to use `/usr/bin/env bash` for better portability
+  - ✅ Keep the explicit version requirement in the README
+- **Implementation Pattern**:
+```bash
+#!/usr/bin/env bash
+
+# Check Bash version
+if ((BASH_VERSINFO[0] < 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] < 2))); then
+  echo "Error: This script requires Bash 5.2.37 or higher"
+  echo "Current version: $BASH_VERSION"
+  exit 1
+fi
+```
+
+### 2. PowerPoint Conversion Implementation
+- **Status**: ✅ COMPLETED
+- **Issue**: The README mentions using pptx2md for PowerPoint conversion, but the actual implementation uses MarkItDown.
+- **Files modified**:
+  - `README.md` (PowerPoint conversion references)
+- **Action Items Completed**:
+  - ✅ Updated README to remove references to pptx2md for PowerPoint conversion
+  - ✅ Verified that dependency checks in conv2md.sh already correctly check for MarkItDown
+  - ✅ Ensured MarkItDown is properly documented as the PowerPoint conversion tool
+  - ✅ Verified that the title_file option is correctly marked as deprecated in both README and script
+- **Implementation Note**: The PowerPoint conversion is handled in `convert_with_markitdown` function with the file type parameter "PowerPoint presentation"
+
+### 3. Word Document Conversion (.doc files)
+- **Status**: ✅ COMPLETED
+- **Issue**: The textutil tool for .doc conversion is macOS-specific but this limitation isn't clearly documented.
+- **Files modified**:
+  - `README.md` (Requirements section)
+  - `lib/converters.sh` (Word document conversion functions)
+  - `conv2md.sh` (dependency checks)
+  - `docs/textutil_doc_conversion.md` (detailed documentation)
+- **Action Items Completed**:
+  - ✅ Updated README to clearly state that textutil is required for an intermediate conversion from .doc to .docx format, which will then be sent to `markitdown`
+  - ✅ Specified that textutil is macOS-specific in the requirements section
+  - ✅ Added a clear error message when attempting to convert .doc files on non-macOS systems
+  - ✅ Added platform detection in the `convert_doc_with_textutil` function
+  - ✅ Added detailed documentation in `docs/textutil_doc_conversion.md` about the macOS limitation
+  - ✅ Provided alternative approaches for non-macOS systems in the documentation
+  - ✅ Fixed ShellCheck warnings (SC2155) in the `convert_doc_with_textutil` and `_convert_with_markitdown` functions
+- **Implementation Pattern Used**:
+```bash
+# Check if running on macOS for textutil
+if [[ "$(uname)" != "Darwin" ]]; then
+  log_error "textutil is only available on macOS. Cannot convert .doc files on this system."
+  log_error "Please convert .doc files to .docx format manually before processing."
+  log_warning "Alternatives: Use LibreOffice (soffice --headless --convert-to docx) or MS Word on non-macOS systems."
+  write_to_progress_pipe "failed:1:0:0:$input_file"
+  return 1
+fi
+```
+
+### 4. Marker/marker_single Usage
+- **Status**: ✅ COMPLETED
+- **Issue**: The README lists marker/marker_single as requirements, but the script checks for and uses just "marker" command.
+- **Files to modify**:
+  - `lib/converters.sh` (PDF conversion functions)
+  - `conv2md.sh` (dependency checks)
+- **Action Items**:
+  - ✅ Update the script to explicitly check for and use marker_single for PDF OCR
+  - ✅ Ensure consistent naming in both code and documentation
+  - ✅ Add proper error handling if marker_single is not found
+  - ✅ Update log messages to be consistent with marker_single
+- **Implementation Note**: The marker_single command should be used with the `--force_ocr` flag for OCR processing
+
+### 5. Timeout Protection
+- **Status**: ✅ COMPLETED
+- **Issue**: The script defines timeout values but doesn't consistently use them throughout the codebase.
+- **Files modified**:
+  - `lib/converters.sh` (all conversion functions with timeouts)
+- **Action Items Completed**:
+  - ✅ Replaced hardcoded timeout values with the defined constants in the `_convert_with_markitdown` function
+  - ✅ Added fallback handling for when conversion_timeout is not defined using a descriptive DEFAULT_GENERIC_TIMEOUT constant
+  - ✅ Replaced all remaining hardcoded timeout values with the defined constants (WORD_TIMEOUT, POWERPOINT_TIMEOUT, PDF_TIMEOUT)
+  - ✅ Ensured WORD_TIMEOUT, POWERPOINT_TIMEOUT, and PDF_TIMEOUT are used consistently throughout the codebase
+  - ✅ Added proper cleanup when timeouts occur, including removing partial output files
+  - ✅ Improved error handling and logging for timeout situations
+- **Implementation Pattern Used**:
+```bash
+# Use the global timeout constants
+if command -v timeout &>/dev/null; then
+  timeout_cmd="timeout $WORD_TIMEOUT"  # Use the appropriate constant
+elif command -v gtimeout &>/dev/null; then
+  timeout_cmd="gtimeout $WORD_TIMEOUT"  # Use the appropriate constant
+fi
+
+# Cleanup after timeout
+if [[ $status -eq 124 ]]; then  # 124 is the exit code for timeout
+  log_warning "Process timed out after $timeout_value seconds"
+  # Cleanup partial output files
+  if [[ -f "$output_file" ]]; then
+    rm -f "$output_file"
+  fi
+fi
+```
+
+## Medium Priority
+
+### 6. Log Rotation
+- **Status**: ✅ COMPLETED
+- **Issue**: Log rotation implementation is incomplete and inconsistent.
+- **Files modified**:
+  - `lib/logging.sh` (log rotation functions)
+  - `lib/utils.sh` (removed duplicate rotate_log function)
+  - `conv2md.sh` (added log rotation calls)
+- **Action Items Completed**:
+  - ✅ Implemented consistent log rotation for all log files
+  - ✅ Used the defined log_max_size variable throughout the codebase
+  - ✅ Added timestamp to rotated logs
+  - ✅ Limited the number of rotated log files to prevent disk space issues
+  - ✅ Added log rotation calls to all logging functions
+  - ✅ Added log rotation at the beginning and end of script execution
+  - ✅ Fixed ShellCheck warnings in the logging functions
+  - ✅ Removed duplicate rotate_log function from utils.sh
+- **Implementation Pattern Used**:
+```bash
+# Rotate log file if it exceeds the maximum size
+rotate_log() {
+  local log_file="$1"
+  local max_rotated_logs=5  # Limit number of rotated logs
+  
+  if [[ -f "$log_file" ]]; then
+    local file_size
+    file_size=$(get_file_size_bytes "$log_file")
+    
+    if [[ $file_size -gt ${max_log_size:-10485760} ]]; then
+      local timestamp
+      timestamp=$(date +"%Y%m%d%H%M%S")
+      local rotated_log="${log_file}.${timestamp}"
+      
+      # Move current log to rotated log
+      mv "$log_file" "$rotated_log"
+      
+      # Create new empty log file with proper permissions
+      touch "$log_file"
+      chmod 600 "$log_file"
+      
+      # Remove old rotated logs if there are too many
+      find "$(dirname "$log_file")" -name "$(basename "$log_file").*" -type f | sort -r | tail -n +$((max_rotated_logs + 1)) | while read -r old_log; do
+        rm -f "$old_log"
+      done
+    fi
+  fi
+}
+```
+
+### 7. Maximum File Size Handling
+- **Status**: ✅ COMPLETED
+- **Issue**: The max_file_size parameter uses platform-specific stat commands without proper fallback.
+- **Files modified**:
+  - `lib/file_ops.sh` (file size checking functions)
+  - `/Users/patrickpark/workutils/conv2md/README.md` (documentation)
+- **Action Items Completed**:
+  - ✅ Implemented cross-platform file size checking with `get_file_size_bytes()` function
+  - ✅ Added fallback mechanisms for different stat command formats
+  - ✅ Added fallback to `wc -c` for systems without stat command
+  - ✅ Documented the max_file_size parameter behavior clearly in README.md
+  - ✅ Improved error handling and logging when files are skipped due to size
+  - ✅ Fixed ShellCheck warnings in the file_ops.sh file
+  - ✅ Added proper ShellCheck directives for variables defined in the main script
+- **Implementation Pattern Used**:
+```bash
+# Cross-platform file size function
+get_file_size_bytes() {
+  local file="$1"
+  local size=0
+  
+  if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    size=$(stat -f%z "$file" 2>/dev/null)
+  elif [[ "$(uname)" == "Linux" ]]; then
+    # Linux
+    size=$(stat -c%s "$file" 2>/dev/null)
+  else
+    # Fallback using wc -c
+    size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+  fi
+  
+  echo "${size:-0}"
+}
+```
+
+### 8. Title File Support for PowerPoint
+- **Status**: ✅ COMPLETED
+- **Issue**: Title file support for PowerPoint slides is mentioned but not fully implemented.
+- **Files modified**:
+  - `README.md` (Command Line Options section)
+  - `conv2md.sh` (command line parsing)
+  - `lib/utils.sh` (command line parsing)
+  - `lib/config.sh` (variable declaration)
+- **Action Items Completed**:
+  - ✅ Removed title file support feature from the README and code
+  - ✅ Removed the --title-file command line option from conv2md.sh
+  - ✅ Removed the -title_file option from utils.sh
+  - ✅ Removed the title_file variable from config.sh
+  - ✅ Removed references to title file in the PowerPoint Conversion Issues section of README.md
+- **Implementation Note**: This feature was intended for pptx2md but is not applicable with MarkItDown
+
+### 9. Batch Size Limitation
+- **Status**: ✅ COMPLETED
+- **Issue**: Batch size parameter doesn't clearly affect PDF processing.
+- **Files modified**:
+  - `README.md` (Command Line Options section)
+  - `conv2md.sh` (command line parsing)
+  - `lib/converters.sh` (PDF batch processing)
+- **Action Items Completed**:
+  - ✅ Removed batch size limitation feature from the code
+  - ✅ Removed the -b, --batch-size command line option
+  - ✅ Updated the process_pdfs_with_optimizations function to use a fixed batch size
+  - ✅ Removed references to batch size from the README.md file
+  - ✅ Removed the Batch Processing section from the README.md file
+- **Implementation Note**: GNU Parallel already handles job distribution efficiently without needing a separate batch size parameter. A fixed batch size of 20 files is now used internally.
+
+## Lower Priority
+
+### 10. Directory Structure Preservation
+- **Status**: ✅ COMPLETED
+- **Issue**: Inconsistencies in how relative paths are calculated and preserved.
+- **Files modified**:
+  - `lib/file_ops.sh` (added standardized path handling functions)
+  - `lib/converters.sh` (updated conversion functions to use standardized path handling)
+- **Action Items Completed**:
+  - ✅ Added a standardized `get_relative_path()`
