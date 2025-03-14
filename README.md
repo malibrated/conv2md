@@ -128,6 +128,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **MarkItDown**: For general document conversion (including Word, PowerPoint, and many other formats)
 - **marker/marker_single**: For PDF OCR conversion
 - **pdftotext**: For extracting text from PDFs (part of poppler-utils)
+- **SQLite** (recommended): For efficient checkpoint database management and improved performance with large batches of files
 - **GNU Parallel** (optional): For improved performance when processing multiple files
 - **pandoc**: For Word document conversion when MarkItDown is not available
 - **textutil** (macOS only): Required for converting legacy .doc files to .docx format
@@ -168,6 +169,7 @@ See [MARKER GitHub Repository](https://github.com/VikParuchuri/marker) for more 
 
 ```bash
 # On macOS with Homebrew
+brew install sqlite    # For efficient checkpoint database management
 brew install poppler  # For pdftotext
 brew install parallel # For GNU Parallel
 brew install pandoc   # For Word document conversion when MarkItDown is not available
